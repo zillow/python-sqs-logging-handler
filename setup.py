@@ -15,24 +15,18 @@ def read(fname):
     '''Utility function to read the README file.'''
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
-Distribution(dict(
-    setup_requires=['versioner'],
-    dependency_links=['http://pypispandex.in.zillow.net/simple/versioner/']))
-
-from zillow.tools import versioner
-
 # figure out what the install will need
 install_requires = ["setuptools >=0.5", "python-json-logger", "boto3", "retrying"]
 
 setup(
     name="sqs-log-handler",
-    version=versioner.get_version(),
+    version="1.0",
     author="Wei Liu",
     author_email="weil@zillowgroup.com",
     description="a python log handler that pushes logs into AWS sqs",
     license="(C) Zillow, Inc. 2012-",
     keywords="zillow",
-    url="https://stash.atl.zillow.net/projects/LIBS/repos/egg.sqs-log-handler/browse",
+    url="http://github.com/zillow/python-sqs-logging-handler",
     packages=find_packages(),
     long_description=read('README.md'),
     classifiers=[
