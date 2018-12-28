@@ -4,10 +4,16 @@ import logging.handlers
 import boto3
 from retrying import retry
 
+
 class SQSHandler(logging.Handler):
     """ A Python logging handler which sends messages to Amazon SQS. """
 
-    def __init__(self, queue, aws_key_id=None, secret_key=None, aws_region=None, global_extra=None):
+    def __init__(self,
+                 queue,
+                 aws_key_id=None,
+                 secret_key=None,
+                 aws_region=None,
+                 global_extra=None):
         """
         Sends log messages to SQS so downstream processors can consume
         (e.g. push the log messages to Splunk).
