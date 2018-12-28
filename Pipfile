@@ -8,6 +8,7 @@ mock = "*"
 nose = "*"
 moto = "==1.3.7"
 pytest = "*"
+pytest-runner = "*"
 
 [packages]
 sqs-log-handler = {path = ".",editable = true}

@@ -17,7 +17,10 @@ INSTALL_REQUIRES = [
 TESTS_REQUIRE = [
     "mock",
     "moto",
-    "nose",
+    "pytest",
+]
+SETUP_REQUIRES = [
+    "pytest-runner",
 ]
 
 
@@ -46,5 +49,5 @@ setup(
     ],
     install_requires=INSTALL_REQUIRES,
     tests_require=TESTS_REQUIRE,
-    test_suite="nose.collector",
+    setup_requires=SETUP_REQUIRES,
 )
