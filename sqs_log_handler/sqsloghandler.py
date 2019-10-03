@@ -7,7 +7,7 @@ from retrying import retry
 class SQSHandler(logging.Handler):
     """ A Python logging handler which sends messages to Amazon SQS. """
 
-    def __init__(self, queue, aws_key_id=None, secret_key=None, aws_region=None, global_extra=None):
+    def __init__(self, queue, aws_key_id=None, secret_key=None, aws_region=None, global_extra=None, MessageGroupId=None):
         """
         Sends log messages to SQS so downstream processors can consume
         (e.g. push the log messages to Splunk).
@@ -24,6 +24,7 @@ class SQSHandler(logging.Handler):
                                 region_name=aws_region)
         self.queue = client.get_queue_by_name(QueueName=queue)
         self._global_extra = global_extra
+        self.MessageGroupId = MessageGroupId
 
         # When self.emit is called, the emit function will call boto3 code,
         # which in-turn will generate logs, leading to infinitely nested
@@ -47,6 +48,9 @@ class SQSHandler(logging.Handler):
             # calls. Use the flag to prevent stack overflow.
             self._entrance_flag = True
             try:
-                self.queue.send_message(MessageBody=msg)
+                if self.MessageGroupId is not None:
+                  self.queue.send_message(MessageBody=msg, MessageGroupId=self.MessageGroupId)
+                else:
+                  self.queue.send_message(MessageBody=msg)
             finally:
                 self._entrance_flag = False
