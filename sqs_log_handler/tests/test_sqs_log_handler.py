@@ -1,9 +1,11 @@
+import json
 import logging
+import os
 import time
+import uuid
 
 import boto3
-
-import unittest
+import pytest
 
 from moto import mock_sqs
 from mock import Mock, patch
@@ -18,113 +20,204 @@ mock_time_provider.return_value = mock_time_tuple
 mock_time = Mock()
 mock_time.return_value = time.mktime(mock_time_tuple)
 
-@mock_sqs
-class TestSQSLogHandler(unittest.TestCase):
-    def setUp(self):
-        # create mock sqs queue
-        self.log_queue_name = 'logging-queue-test'
-        client = boto3.resource('sqs', aws_access_key_id='aws_key_id', aws_secret_access_key='secret_key', region_name='us-west-2')
-        self.queue = client.create_queue(QueueName=self.log_queue_name)
-        self.assertIsNotNone(self.queue)
+TEST_AWS_ACCESS_KEY_ID = 'aws_key_id'
+TEST_AWS_SECRET_ACCESS_KEY = 'aws_secret_key'
+TEST_AWS_DEFAULT_REGION = 'us-west-2'
+os.environ['AWS_ACCESS_KEY_ID'] = TEST_AWS_ACCESS_KEY_ID
+os.environ['AWS_SECRET_ACCESS_KEY'] = TEST_AWS_SECRET_ACCESS_KEY
+os.environ['AWS_DEFAULT_REGION'] = TEST_AWS_DEFAULT_REGION
 
-        # set up the test target (log handler) together with a formatter.
-        self.log_handler = sqsloghandler.SQSHandler(self.log_queue_name)
-        formatter = jsonlogger.JsonFormatter('%(asctime) %(levelname) %(message)')
-        self.log_handler.setFormatter(formatter)
-        self.logger = logging.getLogger(TestSQSLogHandler.__name__)
-        self.logger.addHandler(self.log_handler)
+TEST_QUEUE_NAME = 'test-queue'
+TEST_LOGGER_NAME = 'test-queue-logger'
 
-    def tearDown(self):
-        self.queue.purge()
 
-    @patch('time.time', mock_time)
-    def test_sqs_log_handler_basic_json_format(self):
-        """Fails if log handler does not output expected log message"""
-        try:
-            self.logger.info("test info message")
-            body = self.retrieve_message()
-            expected = ("""{"asctime": "2016-01-01 00:00:00,000","""
-                        """ "levelname": "INFO", "message": "test info message"}""")
-        except BaseException as err:
-            self.fail("Should not raise exception, got {} instead".format(err))
-        self.assertEqual(body, expected)
+@pytest.fixture
+def logger_name():
+    return '{}-{}'.format(TEST_LOGGER_NAME, str(uuid.uuid4()))
 
-    @patch('time.time', mock_time)
-    def test_sqs_log_handler_extra_json_data(self):
-        """Fails if log handler does not output expected log message with extras"""
-        try:
-            extra = {
-                "test": "test logging",
-                "num": 1,
-                5: "9",
-                "float": 1.75,
-                "nested": {"more": "data"}
-            }
-            self.logger.info("test info message with properties", extra=extra)
-            body = self.retrieve_message()
-            expected = ("""{"asctime": "2016-01-01 00:00:00,000", "levelname": "INFO","""
-                        """ "message": "test info message with properties","""
-                        """ "5": "9", "float": 1.75, "num": 1,"""
-                        """ "test": "test logging", "nested": {"more": "data"}}""")
-        except BaseException as err:
-            self.fail("Should not raise exception, got {} instead".format(err))
-        self.assertEqual(body, expected)
 
-    @patch('time.time', mock_time)
-    def test_sqs_log_handler_error(self):
-        """Fails if log handler does not output expected log message at error level"""
-        try:
-            extra = {
-                "test": "test logging",
-                "num": 1,
-                5: "9",
-                "float": 1.75,
-                "nested": {"more": "data"}
-            }
-            self.logger.error("test info message with properties", extra=extra)
-            body = self.retrieve_message()
-            expected = ("""{"asctime": "2016-01-01 00:00:00,000", "levelname": "ERROR","""
-                        """ "message": "test info message with properties","""
-                        """ "5": "9", "float": 1.75, "num": 1,"""
-                        """ "test": "test logging", "nested": {"more": "data"}}""")
-        except BaseException as err:
-            self.fail("Should not raise exception, got {} instead".format(err))
-        self.assertEqual(body, expected)
+@pytest.fixture
+def queue_name():
+    return '{}-{}'.format(TEST_QUEUE_NAME, str(uuid.uuid4()))
 
-    @patch('time.time', mock_time)
-    def test_sqs_log_global_extra(self):
-        """Fails if log handler does not output expected log message at error level"""
-        try:
-            extra = {
-                "test": "test logging",
-                "num": 1,
-                5: "9",
-                "float": 1.75,
-                "nested": {"more": "data"}
-            }
 
-            global_extra = {
-                "cluster_name": "regression",
-                "node_name": "localhost",
-            }
+@pytest.fixture
+def sqs_client():
+    # activate mock SQS
+    mock_sqs_ctx = mock_sqs()
+    mock_sqs_ctx.start()
+    # SQS.ServiceResource
+    client = boto3.resource('sqs')
+    yield client
+    # stop mock SQS
+    mock_sqs_ctx.stop()
 
-            log_handler = sqsloghandler.SQSHandler(self.log_queue_name, global_extra=global_extra)
-            formatter = jsonlogger.JsonFormatter('%(asctime) %(levelname) %(message)')
-            log_handler.setFormatter(formatter)
-            logger = logging.getLogger(TestSQSLogHandler.__name__ + "global-extra")
-            logger.addHandler(log_handler)
 
-            logger.error("test info message with properties", extra=extra)
-            body = self.retrieve_message()
-            expected = ("""{"asctime": "2016-01-01 00:00:00,000", "levelname": "ERROR","""
-                        """ "message": "test info message with properties", "5": "9", """
-                        """"float": 1.75, "num": 1, "cluster_name": "regression","""
-                        """ "test": "test logging", "nested": {"more": "data"}, "node_name": "localhost"}""")
-        except BaseException as err:
-            self.fail("Should not raise exception, got {} instead".format(err))
-        self.assertEqual(body, expected)
+@pytest.fixture
+def sqs_queue(sqs_client, queue_name):
+    # sqs.Queue
+    queue = sqs_client.create_queue(QueueName=queue_name)
+    yield queue
+    queue.purge()
 
-    def retrieve_message(self):
-        messages = list(self.queue.receive_messages())
-        self.assertGreater(messages.count, 0, "must have at least one message")
-        return messages[0].body
+
+@pytest.fixture
+def sqs_logger(sqs_queue, queue_name, logger_name):
+    if queue_name not in sqs_queue.url:
+        err_msg = '{} not in QueueUrl={}'.format(queue_name, sqs_queue.url)
+        raise ValueError(err_msg)
+
+    # logger
+    log_handler = sqsloghandler.SQSHandler(queue_name)
+    formatter = jsonlogger.JsonFormatter('%(asctime) %(levelname) %(message)')
+    log_handler.setFormatter(formatter)
+    logger = logging.getLogger(logger_name)
+    logger.addHandler(log_handler)
+    yield logger
+
+
+def fetch_sqs_message(queue):
+    messages = list(queue.receive_messages())
+    messages_count = len(messages)
+    assert messages_count > 0, "must have at least one message"
+    return messages[0].body
+
+
+@patch('time.time', mock_time)
+def test_basic_operation(sqs_queue, sqs_logger):
+    # set logger level
+    sqs_logger.setLevel(logging.WARNING)
+
+    # log a test message
+    test_msg = 'test error message'
+    sqs_logger.error(test_msg)
+
+    # fetch message from queue
+    found_str = fetch_sqs_message(sqs_queue)
+    assert isinstance(found_str, str)
+
+    # verify message content
+    result_dict = json.loads(found_str)
+    assert isinstance(result_dict, dict)
+    expected_dict = {
+        'asctime': '2016-01-01 00:00:00,000',
+        'levelname': 'ERROR',
+        'message': test_msg,
+    }
+    assert result_dict == expected_dict
+
+
+@patch('time.time', mock_time)
+def test_info_extra(sqs_queue, sqs_logger):
+    # set logger level
+    sqs_logger.setLevel(logging.INFO)
+
+    # extra information
+    extra_dict = {
+        "test": "test logging",
+        "num": 1,
+        5: "9",
+        "float": 1.75,
+        "nested": {"more": "data"}
+    }
+
+    # log a test message
+    test_msg = 'test info extra'
+    sqs_logger.info(test_msg, extra=extra_dict)
+
+    # fetch message from queue
+    found_str = fetch_sqs_message(sqs_queue)
+    assert isinstance(found_str, str)
+
+    # verify message content
+    result_dict = json.loads(found_str)
+    assert isinstance(result_dict, dict)
+    expected_dict = {
+        'asctime': '2016-01-01 00:00:00,000',
+        'levelname': 'INFO',
+        'message': test_msg,
+    }
+    expected_dict.update({str(k): v for k, v in extra_dict.items()})
+    assert result_dict == expected_dict
+
+
+@patch('time.time', mock_time)
+def test_error_extra(sqs_queue, sqs_logger):
+    # set logger level
+    sqs_logger.setLevel(logging.ERROR)
+
+    # extra information
+    extra_dict = {
+        "test": "test logging",
+        "num": 1,
+        5: "9",
+        "float": 1.75,
+        "nested": {"more": "data"}
+    }
+
+    # log a test message
+    test_msg = 'test error extra'
+    sqs_logger.error(test_msg, extra=extra_dict)
+
+    # fetch message from queue
+    found_str = fetch_sqs_message(sqs_queue)
+    assert isinstance(found_str, str)
+
+    # verify message content
+    result_dict = json.loads(found_str)
+    assert isinstance(result_dict, dict)
+    expected_dict = {
+        'asctime': '2016-01-01 00:00:00,000',
+        'levelname': 'ERROR',
+        'message': test_msg,
+    }
+    expected_dict.update({str(k): v for k, v in extra_dict.items()})
+    assert result_dict == expected_dict
+
+
+@patch('time.time', mock_time)
+def test_info_global_extra(sqs_queue, queue_name, logger_name):
+    # global extra information
+    global_extra_dict = {
+        "cluster_name": "regression",
+        "node_name": "localhost",
+    }
+
+    # sqs_logger
+    log_handler = sqsloghandler.SQSHandler(queue_name, global_extra=global_extra_dict)
+    formatter = jsonlogger.JsonFormatter('%(asctime) %(levelname) %(message)')
+    log_handler.setFormatter(formatter)
+    sqs_logger = logging.getLogger(logger_name)
+    sqs_logger.addHandler(log_handler)
+
+    # set logger level
+    sqs_logger.setLevel(logging.INFO)
+
+    # extra information
+    extra_dict = {
+        "test": "test logging global_extra",
+        "num": 1,
+        5: "9",
+        "float": 1.75,
+        "nested": {"more": "data"}
+    }
+
+    # log a test message
+    test_msg = 'test info global_extra'
+    sqs_logger.info(test_msg, extra=extra_dict)
+
+    # fetch message from queue
+    found_str = fetch_sqs_message(sqs_queue)
+    assert isinstance(found_str, str)
+
+    # verify message content
+    result_dict = json.loads(found_str)
+    assert isinstance(result_dict, dict)
+    expected_dict = {
+        'asctime': '2016-01-01 00:00:00,000',
+        'levelname': 'INFO',
+        'message': test_msg,
+    }
+    expected_dict.update({str(k): v for k, v in extra_dict.items()})
+    expected_dict.update({str(k): v for k, v in global_extra_dict.items()})
+    assert result_dict == expected_dict
