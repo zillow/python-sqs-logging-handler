@@ -4,6 +4,7 @@ import logging.handlers
 import boto3
 from retrying import retry
 
+
 class SQSHandler(logging.Handler):
     """ A Python logging handler which sends messages to Amazon SQS. """
 

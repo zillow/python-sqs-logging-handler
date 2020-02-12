@@ -95,3 +95,7 @@ coverage.xml
 log/
 
 .zb_virtualenv/
+
+# lock files #
+##############
+Pipfile.lock
