@@ -99,3 +99,5 @@ log/
 # lock files #
 ##############
 Pipfile.lock
+
+.eggs/
