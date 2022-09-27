@@ -25,10 +25,14 @@ class SQSHandler(logging.Handler):
         """
 
         logging.Handler.__init__(self)
-        client = boto3.resource('sqs',
-                                aws_access_key_id=aws_key_id,
-                                aws_secret_access_key=secret_key,
-                                region_name=aws_region)
+        if aws_key_id is None or secret_key is None:
+            session = boto3.session.Session(region_name=aws_region)
+        else:
+            session = boto3.session.Session(aws_access_key_id=aws_key_id,
+                                            aws_secret_access_key=secret_key,
+                                            region_name=aws_region)
+
+        client = session.resource('sqs')
         self.queue = client.get_queue_by_name(QueueName=queue)
         self._global_extra = global_extra
         self.MessageGroupId = MessageGroupId
